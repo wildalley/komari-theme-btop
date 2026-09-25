@@ -100,63 +100,36 @@
     color: #e2e8f0;
   }
 
-  /* Universal Monospace & Terminal styling for btop theme */
-  html.btop,
-  html.btop *,
-  html[data-theme="btop"],
-  html[data-theme="btop"] * {
+  /* Terminal styling strictly scoped to the btop-terminal dashboard */
+  .btop-terminal,
+  .btop-terminal * {
     font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
 
-  /* Enforce crisp sharp terminal window corners in btop mode */
-  html.btop .rounded-2xl,
-  html.btop .rounded-xl,
-  html.btop .rounded-lg,
-  html.btop .rounded-md,
-  html[data-theme="btop"] .rounded-2xl,
-  html[data-theme="btop"] .rounded-xl,
-  html[data-theme="btop"] .rounded-lg,
-  html[data-theme="btop"] .rounded-md {
+  /* Enforce crisp sharp terminal window corners strictly in btop terminal view */
+  .btop-terminal .rounded-2xl,
+  .btop-terminal .rounded-xl,
+  .btop-terminal .rounded-lg,
+  .btop-terminal .rounded-md {
     border-radius: 2px !important;
   }
 
   /* Inverted terminal reverse-video text selection */
-  html.btop ::selection,
-  html[data-theme="btop"] ::selection {
+  .btop .btop-terminal ::selection,
+  [data-theme="btop"] .btop-terminal ::selection {
     background: #00f0ff !important;
     color: #06080d !important;
   }
 
   html.btop-light body,
   html[data-theme="btop-light"] body {
-    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
     background-color: #ebe7ee;
     color: #2b2735;
   }
 
-  /* Universal Monospace & Terminal styling for btop-light theme */
-  html.btop-light,
-  html.btop-light *,
-  html[data-theme="btop-light"],
-  html[data-theme="btop-light"] * {
-    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  }
-
-  /* Enforce crisp sharp terminal window corners in btop-light mode */
-  html.btop-light .rounded-2xl,
-  html.btop-light .rounded-xl,
-  html.btop-light .rounded-lg,
-  html.btop-light .rounded-md,
-  html[data-theme="btop-light"] .rounded-2xl,
-  html[data-theme="btop-light"] .rounded-xl,
-  html[data-theme="btop-light"] .rounded-lg,
-  html[data-theme="btop-light"] .rounded-md {
-    border-radius: 2px !important;
-  }
-
   /* Inverted terminal reverse-video text selection for btop-light */
-  html.btop-light ::selection,
-  html[data-theme="btop-light"] ::selection {
+  .btop-light .btop-terminal ::selection,
+  [data-theme="btop-light"] .btop-terminal ::selection {
     background: #7c5c99 !important;
     color: #ffffff !important;
   }
@@ -276,51 +249,6 @@
   font-weight: 600;
 }
 
-.btop .popover,
-.btop [data-slot="popover"],
-.btop [data-slot="date-picker-popover"],
-.btop .date-picker__popover,
-.btop .select__popover {
-  background-color: #080c14 !important;
-  color: #f1f5f9 !important;
-  border: 1px solid #1b253b !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.8), 0 0 15px rgba(0, 240, 255, 0.08) !important;
-}
-
-.btop .list-box-item:hover,
-.btop [data-slot="list-box-item"]:hover {
-  background-color: #121927 !important;
-  color: #38bdf8 !important;
-}
-
-.btop .list-box-item[data-selected="true"],
-.btop [data-slot="list-box-item"][data-selected="true"] {
-  background-color: rgba(6, 182, 212, 0.25) !important;
-  color: #22d3ee !important;
-}
-
-.btop-light .popover,
-.btop-light [data-slot="popover"],
-.btop-light [data-slot="date-picker-popover"],
-.btop-light .date-picker__popover,
-.btop-light .select__popover {
-  background-color: #f2eef5 !important;
-  color: #2b2735 !important;
-  border: 1px solid #aba4b8 !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15) !important;
-}
-
-.btop-light .list-box-item:hover,
-.btop-light [data-slot="list-box-item"]:hover {
-  background-color: #ded8e6 !important;
-  color: #2b2735 !important;
-}
-
-.btop-light .list-box-item[data-selected="true"],
-.btop-light [data-slot="list-box-item"][data-selected="true"] {
-  background-color: rgba(124, 92, 153, 0.2) !important;
-  color: #7c5c99 !important;
-}
 
 .list-box-item__indicator {
   color: #4338ca !important;

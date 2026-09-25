@@ -577,7 +577,7 @@ export function BtopTerminalView({
 
   return (
     <div
-      className={`h-screen max-h-screen w-full p-2 sm:p-2.5 font-mono text-[12px] sm:text-[13px] leading-snug select-none flex flex-col overflow-hidden ${colors.bg} ${colors.text}`}
+      className={`btop-terminal h-screen max-h-screen w-full p-2 sm:p-2.5 font-mono text-[12px] sm:text-[13px] leading-snug select-none flex flex-col overflow-hidden ${colors.bg} ${colors.text}`}
       style={{
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
       }}
