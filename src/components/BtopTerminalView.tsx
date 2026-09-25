@@ -33,7 +33,21 @@ import {
 } from "lucide-react";
 import { NodeState, ThemeMode, PingStat, BillingInfo } from "../types";
 import { formatBytes, formatRate } from "../utils/format";
+import { usedTrafficSplit } from "../utils/traffic";
 import { getRegionFlag } from "../utils/flags";
+
+/** 计费周期的中文短标签，与主项目后台的周期取值保持一致。 */
+function cycleLabel(cycle?: string): string {
+  switch (cycle) {
+    case "quarter": return "季付";
+    case "half_year": return "半年付";
+    case "year": return "年付";
+    case "two_year": return "两年付";
+    case "three_year": return "三年付";
+    case "one_time": return "一次性";
+    default: return cycle ? cycle : "--";
+  }
+}
 
 interface BtopTerminalViewProps {
   nodes: NodeState[];
@@ -49,6 +63,8 @@ interface BtopTerminalViewProps {
   username?: string | null;
   onLogout?: () => void;
   latestAgentVersion?: string;
+  /** 后台主题设置里的数据刷新周期（毫秒），仅作展示。 */
+  refreshIntervalMs?: number;
 }
 
 type TerminalTabMode = "hosts" | "monitor" | "details";
@@ -104,6 +120,7 @@ export function BtopTerminalView({
   username,
   onLogout,
   latestAgentVersion,
+  refreshIntervalMs,
 }: BtopTerminalViewProps) {
   // Theme check: Is Light (screenshot lavender) or Dark btop?
   const isLight = theme === "btop-light";
@@ -121,15 +138,16 @@ export function BtopTerminalView({
   }, [nodes, selectedNodeId]);
 
   const activeNode = useMemo(() => {
+    // 集群为空时的占位节点：仅保证布局可用，所有数值口径保持为空。
     return nodes.find((n) => n.node_id === selectedNodeId) || nodes[0] || ({
       node_id: "localhost-main",
-      name: "Ryzen 7 5800H",
+      name: "localhost",
       is_online: true,
     } as NodeState);
   }, [nodes, selectedNodeId]);
 
-  // Refresh interval simulation: 1000ms, 2000ms, etc.
-  const [refreshInterval, setRefreshInterval] = useState(2000);
+  // 刷新周期来自后台主题设置（manifest configuration.refreshInterval，秒）。
+  const refreshInterval = refreshIntervalMs ?? 2000;
 
   // Live real-time clock
   const [timeStr, setTimeStr] = useState(() => {
@@ -189,9 +207,9 @@ export function BtopTerminalView({
     return (n.network?.rate_download || 0) + (n.network?.rate_upload || 0);
   };
 
-  const getNodePingLatency = (n: NodeState) => {
+  const getNodePingLatency = (n: NodeState): number | null => {
     if (n.pings && n.pings.length > 0) return n.pings[0].latency_ms;
-    return 32.4;
+    return null;
   };
 
   const handleCopy = (text: string, label: string) => {
@@ -261,7 +279,7 @@ export function BtopTerminalView({
           cmp = getNodeNetRate(a) - getNodeNetRate(b);
           break;
         case "ping":
-          cmp = getNodePingLatency(a) - getNodePingLatency(b);
+          cmp = (getNodePingLatency(a) ?? Number.MAX_SAFE_INTEGER) - (getNodePingLatency(b) ?? Number.MAX_SAFE_INTEGER);
           break;
         default:
           cmp = 0;
@@ -381,29 +399,18 @@ export function BtopTerminalView({
     };
   }, [isLight]);
 
-  // Rolling CPU & Net history buffer for Braille graph (72 data points for wide continuous wave)
-  const [cpuHistory, setCpuHistory] = useState<number[]>(() => [
-    12, 14, 18, 22, 20, 16, 12, 10, 15, 24, 30, 26, 18, 12, 8, 10,
-    14, 18, 24, 36, 42, 38, 26, 18, 14, 12, 10, 15, 18, 14, 10, 8,
-    12, 15, 20, 28, 35, 30, 22, 16, 12, 14, 18, 26, 32, 28, 20, 15,
-    12, 16, 22, 32, 44, 40, 28, 20, 16, 12, 10, 14, 18, 16, 12, 10,
-    12, 14, 18, 22, 18, 14, 10, 8
-  ]);
-  const [netHistory, setNetHistory] = useState<number[]>(() => [
-    8, 10, 14, 18, 26, 32, 28, 20, 14, 16, 22, 28, 34, 30, 22, 16,
-    12, 14, 18, 24, 38, 48, 42, 30, 22, 18, 14, 16, 20, 26, 32, 28,
-    20, 16, 14, 18, 22, 28, 36, 32, 24, 18, 14, 16, 22, 30, 42, 38,
-    28, 20, 16, 14, 18, 24, 32, 28, 22, 18, 14, 16, 20, 24, 20, 16,
-    12, 14, 18, 22, 26, 22, 18, 14
-  ]);
+  // Rolling CPU & Net history buffer for Braille graph — 从全零开始累积，
+  // 只画真实采样，绝不预填一段假波形。
+  const [cpuHistory, setCpuHistory] = useState<number[]>(() => new Array(72).fill(0));
+  const [netHistory, setNetHistory] = useState<number[]>(() => new Array(72).fill(0));
 
   useEffect(() => {
     if (!activeNode) return;
-    const currentCpu = activeNode.cpu || activeNode.system?.cpu_percent || 6;
+    const currentCpu = activeNode.cpu || activeNode.system?.cpu_percent || 0;
     setCpuHistory((prev) => [...prev.slice(1), currentCpu]);
 
-    const currentNetRate = (activeNode.network?.rate_download || 14.0 * 1024) / 1024;
-    setNetHistory((prev) => [...prev.slice(1), Math.max(4, Math.round(currentNetRate))]);
+    const currentNetRate = (activeNode.network?.rate_download || 0) / 1024;
+    setNetHistory((prev) => [...prev.slice(1), Math.round(currentNetRate)]);
   }, [activeNode?.cpu, activeNode?.network?.rate_download, activeNode?.last_seen]);
 
   // Network throughput dynamic scale
@@ -411,83 +418,62 @@ export function BtopTerminalView({
     return Math.max(20, ...netHistory);
   }, [netHistory]);
 
-  // Metrics resolution
-  const cpuPercent = activeNode?.cpu || activeNode?.system?.cpu_percent || 6;
-  const cpuCores = activeNode?.system?.cpu_count || 16;
-  const cpuModel = activeNode?.system?.cpu_model || activeNode?.name || "Ryzen 7 5800H";
+  // Metrics resolution — 所有缺省一律为 0 / "--"，不编造任何看似真实的数值。
+  const cpuPercent = activeNode?.cpu || activeNode?.system?.cpu_percent || 0;
+  const cpuCores = activeNode?.system?.cpu_count || 0;
+  const cpuModel = activeNode?.system?.cpu_model || activeNode?.name || "--";
   const uptimeStr = formatBtopUptime(activeNode?.system?.uptime || 0);
 
-  // Exact core breakdown C0-C15 matching the user's screenshot
-  const screenshotCoreLoads = [44, 8, 2, 1, 20, 2, 3, 0, 6, 1, 2, 0, 4, 0, 1, 0];
+  // Per-core breakdown: the agent only reports the aggregate load, so every
+  // core row shows that same real figure — no sine-wave synthesis of per-core
+  // readings that were never measured. Unknown core count renders no rows.
   const coreLoads = useMemo(() => {
-    return Array.from({ length: 16 }).map((_, i) => {
-      if (activeNode.system?.cpu_percent && activeNode.system.cpu_percent > 0) {
-        const offset = Math.sin((i + 1) * 1.5) * 12 + ((i % 3) - 1) * 6;
-        return Math.min(100, Math.max(0, Math.round(cpuPercent + offset)));
-      }
-      return screenshotCoreLoads[i] ?? 0;
-    });
-  }, [cpuPercent, activeNode?.system?.cpu_percent]);
+    if (cpuCores <= 0) return [];
+    return Array.from({ length: cpuCores }, () => Math.round(cpuPercent));
+  }, [cpuCores, cpuPercent]);
 
   // Memory breakdown
-  const memTotal = activeNode.system?.mem_total || 28.3 * 1024 * 1024 * 1024;
-  const memUsed = activeNode.system?.mem_used || 16.3 * 1024 * 1024 * 1024;
+  const memTotal = activeNode.system?.mem_total || 0;
+  const memUsed = activeNode.system?.mem_used || 0;
   const memFree = Math.max(0, memTotal - memUsed);
-  const memCached = Math.round(memTotal * 0.24);
-  const memAvail = Math.max(0, memTotal - memUsed + memCached * 0.7);
-  const memPercent = (memUsed / memTotal) * 100;
+  const memAvail = memFree;
+  const memPercent = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
 
   // Primary Disk (精简为最实用的主系统盘与Swap)
-  const diskTotal = activeNode.system?.disk_total || 472 * 1024 * 1024 * 1024;
-  const diskUsed = activeNode.system?.disk_used || 111 * 1024 * 1024 * 1024;
-  const diskPercent = activeNode.system?.disk_percent || (diskUsed / diskTotal) * 100;
-  const swapTotal = activeNode.system?.swap_total || 14 * 1024 * 1024 * 1024;
-  const swapUsed = activeNode.system?.swap_used || 2.8 * 1024 * 1024 * 1024;
+  const diskTotal = activeNode.system?.disk_total || 0;
+  const diskUsed = activeNode.system?.disk_used || 0;
+  const diskPercent = activeNode.system?.disk_percent || (diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0);
+  const swapTotal = activeNode.system?.swap_total || 0;
+  const swapUsed = activeNode.system?.swap_used || 0;
   const swapPercent = swapTotal > 0 ? (swapUsed / swapTotal) * 100 : 0;
 
   // Network metrics
-  const netDownRate = activeNode.network?.rate_download || 14.0 * 1024;
-  const netUpRate = activeNode.network?.rate_upload || 7.17 * 1024;
-  const netTotalDown = activeNode.network?.bytes_recv || 20.7 * 1024 * 1024 * 1024;
-  const netTotalUp = activeNode.network?.bytes_sent || 38.7 * 1024 * 1024 * 1024;
+  const netDownRate = activeNode.network?.rate_download || 0;
+  const netUpRate = activeNode.network?.rate_upload || 0;
+  const netTotalDown = activeNode.network?.bytes_recv || 0;
+  const netTotalUp = activeNode.network?.bytes_sent || 0;
+  // 月峰值来自服务端真实统计，未上报时不显示。
+  const peakDownRate = activeNode.network?.monthly_peak_down || 0;
+  const peakUpRate = activeNode.network?.monthly_peak_up || 0;
 
-  // Real or simulated ping targets for active node (Covering 3 domestic carriers and international)
+  // Real ping targets only — 没有配置探测目标时显示空态，而不是一份
+  // 看起来像真数据的默认线路延迟。
   const pingTargets: PingStat[] = useMemo(() => {
-    if (activeNode.pings && activeNode.pings.length > 0) {
-      return activeNode.pings;
-    }
-    return [
-      { target: "163.com", label: "中国电信 163 骨干 (上海 CT 163)", latency_ms: 32.4, packet_loss: 0, jitter: 1.2, color: "#10b981" },
-      { target: "cn2.ct", label: "中国电信 CN2 GIA (广州 CT CN2)", latency_ms: 28.6, packet_loss: 0, jitter: 0.8, color: "#10b981" },
-      { target: "cu10010.com", label: "中国联通 4837 优化 (北京 CU 4837)", latency_ms: 45.1, packet_loss: 0, jitter: 2.4, color: "#06b6d4" },
-      { target: "9929.cu", label: "中国联通 9929 精品 (上海 CU 9929)", latency_ms: 39.2, packet_loss: 0, jitter: 1.1, color: "#06b6d4" },
-      { target: "cm9808.cn", label: "中国移动 CMIN2 高级 (广州 CM CMIN2)", latency_ms: 38.6, packet_loss: 0, jitter: 1.8, color: "#3b82f6" },
-      { target: "cmi58453.hk", label: "中国移动 58453 (香港 CMI 骨干)", latency_ms: 24.5, packet_loss: 0, jitter: 0.9, color: "#3b82f6" },
-      { target: "hkix.net", label: "香港 HKIX / HKT 边缘交换中心", latency_ms: 18.2, packet_loss: 0, jitter: 0.4, color: "#8b5cf6" },
-      { target: "tokyo.ntt", label: "日本东京 NTT / IIJ 核心路由器", latency_ms: 52.8, packet_loss: 0, jitter: 1.5, color: "#f59e0b" },
-      { target: "1.1.1.1", label: "Cloudflare Anycast (1.1.1.1)", latency_ms: 12.3, packet_loss: 0, jitter: 0.5, color: "#ec4899" },
-    ];
+    return activeNode.pings || [];
   }, [activeNode]);
 
-  // Billing & Quota telemetry
-  const billing: BillingInfo = activeNode.billing || {
-    price: 35,
-    price_per_month: 35,
-    currency: "CNY",
-    billing_cycle: "month",
-    expiry_date: "2026-11-28",
-    remaining_days: 65,
-    remaining_value: 75.8,
-    bandwidth_quota: 1000 * 1024 * 1024 * 1024,
-    bandwidth_used: 427 * 1024 * 1024 * 1024,
-    bandwidth_used_up: 142 * 1024 * 1024 * 1024,
-    bandwidth_used_down: 285 * 1024 * 1024 * 1024,
-    provider: "DMIT Pro · GIA 线路",
-  };
+  // Billing & Quota telemetry — 服务端没配的口径一律留空，由各渲染处自行
+  // 显示 "--"，绝不兜底一份虚构的账单。BillingInfo 描述的是服务端 JSON 的
+  // 形状；客户端侧的空账单只能是空对象，故此处显式收窄。
+  const billing = (activeNode.billing || {}) as BillingInfo;
+
+  // 方向明细由服务端下发（up + down 恒等于 bandwidth_used）；不下发时返回
+  // null，显示 "--" 而不是按 40%/60% 硬拆一份假明细。
+  const usedSplit = usedTrafficSplit(billing);
 
   const quotaPercent = billing.bandwidth_quota > 0
     ? Math.min(100, Math.round(((billing.bandwidth_used || 0) / billing.bandwidth_quota) * 100))
-    : 42;
+    : 0;
 
 
   const allRegions = useMemo(() => {
@@ -752,22 +738,8 @@ export function BtopTerminalView({
           >
             [{isLight ? "☀️ LIGHT" : "🌙 DARK"}]
           </button>
-          <div className="flex items-center text-xs">
-            <button
-              onClick={() => setRefreshInterval((prev) => Math.max(500, prev - 500))}
-              className="px-1 hover:bg-current/10 cursor-pointer"
-              title="加速刷新"
-            >
-              -
-            </button>
+          <div className="flex items-center text-xs" title="刷新周期由后台主题设置（refreshInterval）控制">
             <span className="px-1">{refreshInterval}ms</span>
-            <button
-              onClick={() => setRefreshInterval((prev) => Math.min(5000, prev + 500))}
-              className="px-1 hover:bg-current/10 cursor-pointer"
-              title="减速刷新"
-            >
-              +
-            </button>
           </div>
         </div>
       </div>
@@ -933,8 +905,8 @@ export function BtopTerminalView({
               const nDown = n.network?.rate_download || 0;
               const nUp = n.network?.rate_upload || 0;
               const nPing = getNodePingLatency(n);
-              const nProvider = n.billing?.provider || "Standard VPS";
-              const nIp = maskIP ? "**.***.***.**" : (n.system?.public_ip || "127.0.0.1");
+              const nProvider = n.billing?.provider || "--";
+              const nIp = maskIP ? "**.***.***.**" : (n.system?.public_ip || "--");
 
               return (
                 <div
@@ -968,7 +940,7 @@ export function BtopTerminalView({
                   {/* Region */}
                   <span className="col-span-1 hidden sm:flex items-center gap-1">
                     <span>{getRegionFlag(n.region)}</span>
-                    <span className="uppercase text-[11px]">{n.region || "LOC"}</span>
+                    <span className="uppercase text-[11px]">{n.region || "--"}</span>
                   </span>
 
                   {/* IP / Provider */}
@@ -998,26 +970,32 @@ export function BtopTerminalView({
 
                   {/* Ping */}
                   <div className="col-span-2 sm:col-span-1 flex items-center justify-end gap-1 font-mono text-[11px]">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                        nPing < 50
-                          ? "bg-emerald-500"
-                          : nPing < 120
-                          ? "bg-amber-500"
-                          : "bg-rose-500"
-                      }`}
-                    />
-                    <span
-                      className={`font-semibold ${
-                        nPing < 50
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : nPing < 120
-                          ? colors.warn
-                          : colors.alert
-                      }`}
-                    >
-                      {nPing.toFixed(0)}ms
-                    </span>
+                    {nPing != null ? (
+                      <>
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                            nPing < 50
+                              ? "bg-emerald-500"
+                              : nPing < 120
+                              ? "bg-amber-500"
+                              : "bg-rose-500"
+                          }`}
+                        />
+                        <span
+                          className={`font-semibold ${
+                            nPing < 50
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : nPing < 120
+                              ? colors.warn
+                              : colors.alert
+                          }`}
+                        >
+                          {nPing.toFixed(0)}ms
+                        </span>
+                      </>
+                    ) : (
+                      <span className={colors.textDim}>--</span>
+                    )}
                   </div>
                 </div>
               );
@@ -1107,7 +1085,7 @@ export function BtopTerminalView({
 
               <div className="flex items-center gap-3">
                 <span className="font-bold">{cpuModel}</span>
-                <span className={colors.textMuted}>2.6 GHz 55°C 7.97W</span>
+                {cpuCores > 0 && <span className={colors.textMuted}>{cpuCores} Cores</span>}
               </div>
             </div>
 
@@ -1116,7 +1094,7 @@ export function BtopTerminalView({
               <span className="font-bold shrink-0">CPU</span>
               <div className="flex-1 overflow-hidden tracking-tight">[{renderBlockMeter(cpuPercent, 48)}]</div>
               <span className="font-bold shrink-0 w-8 text-right">{cpuPercent.toFixed(0)}%</span>
-              <span className={`text-[11px] shrink-0 ${colors.textDim}`}>......... Tasks: {activeNode.system?.process_count || 87}</span>
+              <span className={`text-[11px] shrink-0 ${colors.textDim}`}>......... Tasks: {activeNode.system?.process_count != null ? activeNode.system.process_count : "--"}</span>
             </div>
 
             {/* Cores Breakdown C0-C15 + Multi-row Braille Wave on left */}
@@ -1133,23 +1111,27 @@ export function BtopTerminalView({
                 <div className="text-[10px] mt-1.5 font-bold select-none">{uptimeStr}</div>
               </div>
 
-              {/* Two-Column Cores C0-C7, C8-C15 (Takes 6 cols) */}
+              {/* Two-Column Cores (Takes 6 cols) — 仅在真实核心数已知时渲染 */}
               <div className="md:col-span-6 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-xs font-mono">
-                {coreLoads.map((pct, i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <span className={`w-8 shrink-0 ${colors.textMuted}`}>C{i}</span>
-                    <span className={`flex-1 mx-1 overflow-hidden text-right select-none ${colors.textDim}`}>
-                      {".".repeat(28)}
-                    </span>
-                    <span
-                      className={`w-9 text-right shrink-0 font-semibold ${
-                        pct > 80 ? colors.alert : pct > 50 ? colors.warn : colors.text
-                      }`}
-                    >
-                      {pct}%
-                    </span>
-                  </div>
-                ))}
+                {coreLoads.length > 0 ? (
+                  coreLoads.map((pct, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <span className={`w-8 shrink-0 ${colors.textMuted}`}>C{i}</span>
+                      <span className={`flex-1 mx-1 overflow-hidden text-right select-none ${colors.textDim}`}>
+                        {".".repeat(28)}
+                      </span>
+                      <span
+                        className={`w-9 text-right shrink-0 font-semibold ${
+                          pct > 80 ? colors.alert : pct > 50 ? colors.warn : colors.text
+                        }`}
+                      >
+                        {pct}%
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <span className={colors.textDim}>核心数未知</span>
+                )}
               </div>
 
               {/* Right Status: Load Average (Takes 2 cols) */}
@@ -1158,7 +1140,7 @@ export function BtopTerminalView({
                 <span className="font-bold tracking-wider">
                   {activeNode.system?.load_1 != null && activeNode.system.load_1 > 0
                     ? `${activeNode.system.load_1.toFixed(2)} ${(activeNode.system.load_5 || activeNode.system.load_1).toFixed(2)} ${(activeNode.system.load_15 || activeNode.system.load_1).toFixed(2)}`
-                    : "1.68 1.92 1.68"}
+                    : "--"}
                 </span>
                 <span className={`text-[10px] ${colors.textMuted}`}>1m 5m 15m</span>
               </div>
@@ -1216,18 +1198,6 @@ export function BtopTerminalView({
                       </div>
                       <div className="w-full mt-0.5">[{renderBlockMeter((memAvail / memTotal) * 100, 20)}]</div>
                     </div>
-                    <div>
-                      <div className="flex justify-between items-center">
-                        <span className={colors.textMuted}>Cached / Buffers:</span>
-                        <div className="flex items-center gap-1.5">
-                          <span>{formatBytes(memCached)}</span>
-                          <span className="w-8 text-right font-semibold text-current/75">
-                            {((memCached / memTotal) * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                      </div>
-                      <div className="w-full mt-0.5">[{renderBlockMeter((memCached / memTotal) * 100, 20)}]</div>
-                    </div>
                     <div className="flex justify-between text-[11px] pt-1 border-t border-dashed border-current/20">
                       <span className={colors.textMuted}>Free RAM:</span>
                       <span>{formatBytes(memFree)}</span>
@@ -1243,7 +1213,7 @@ export function BtopTerminalView({
                       </div>
                       <div className="w-full mt-0.5">[{renderBlockMeter(diskPercent, 20)}]</div>
                       <div className="flex justify-between text-[11px] mt-0.5">
-                        <span className={colors.textMuted}>IO 速率: R 68 KiB/s · W 1.2 MiB/s</span>
+                        <span className={colors.textMuted}>root 分区占用:</span>
                         <span className="font-semibold">{diskPercent.toFixed(1)}%</span>
                       </div>
                     </div>
@@ -1251,24 +1221,12 @@ export function BtopTerminalView({
                     <div className="pt-1 border-t border-dashed border-current/20">
                       <div className="flex justify-between">
                         <span className="font-bold">Virtual Swap</span>
-                        <span>{formatBytes(swapUsed)} / {formatBytes(swapTotal)}</span>
+                        <span>{swapTotal > 0 ? `${formatBytes(swapUsed)} / ${formatBytes(swapTotal)}` : "未启用"}</span>
                       </div>
                       <div className="w-full mt-0.5">[{renderBlockMeter(swapPercent, 20)}]</div>
                       <div className="flex justify-between text-[11px] mt-0.5">
                         <span className={colors.textMuted}>Swap 占用:</span>
-                        <span>{swapPercent.toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-1 border-t border-dashed border-current/20">
-                      <div className="flex justify-between">
-                        <span className="font-bold">/mnt/data (挂载盘)</span>
-                        <span>420 GiB / 1.8 TiB</span>
-                      </div>
-                      <div className="w-full mt-0.5">[{renderBlockMeter(22.8, 20)}]</div>
-                      <div className="flex justify-between text-[11px] mt-0.5">
-                        <span className={colors.textMuted}>IO 存储状态:</span>
-                        <span className="font-bold text-emerald-600 dark:text-emerald-400">HEALTHY / NVMe Gen4</span>
+                        <span>{swapTotal > 0 ? `${swapPercent.toFixed(1)}%` : "--"}</span>
                       </div>
                     </div>
                   </div>
@@ -1284,7 +1242,7 @@ export function BtopTerminalView({
                     <span className={colors.textMuted}>sync</span>
                     <span className={colors.textMuted}>auto</span>
                     <span className={colors.textDim}>──</span>
-                    <span className="font-bold">←b eth0 n→</span>
+                    <span className="font-bold">←b nic n→</span>
                   </div>
                   <span className={`text-[11px] ${colors.textMuted}`}>TOTAL RECV: {formatBytes(netTotalDown)}</span>
                 </div>
@@ -1324,8 +1282,8 @@ export function BtopTerminalView({
                         <span>{(netDownRate * 8 / 1024).toFixed(0)} Kibps</span>
                       </div>
                       <div className="flex justify-between text-[11px] text-current/75">
-                        <span className={colors.textMuted}>▼ 峰值 Peak:</span>
-                        <span>{(netDownRate * 1.35 * 8 / 1024).toFixed(0)} Kibps</span>
+                        <span className={colors.textMuted}>▼ 近一月峰值:</span>
+                        <span>{peakDownRate > 0 ? `${(peakDownRate * 8 / 1024).toFixed(0)} Kibps` : "--"}</span>
                       </div>
                       <div className="flex justify-between text-[11px] text-current/75">
                         <span className={colors.textMuted}>▼ 累计 Total:</span>
@@ -1343,8 +1301,8 @@ export function BtopTerminalView({
                         <span>{(netUpRate * 8 / 1024).toFixed(0)} Kibps</span>
                       </div>
                       <div className="flex justify-between text-[11px] text-current/75">
-                        <span className={colors.textMuted}>▲ 峰值 Peak:</span>
-                        <span>{(netUpRate * 1.35 * 8 / 1024).toFixed(0)} Kibps</span>
+                        <span className={colors.textMuted}>▲ 近一月峰值:</span>
+                        <span>{peakUpRate > 0 ? `${(peakUpRate * 8 / 1024).toFixed(0)} Kibps` : "--"}</span>
                       </div>
                       <div className="flex justify-between text-[11px] text-current/75">
                         <span className={colors.textMuted}>▲ 累计 Total:</span>
@@ -1353,8 +1311,8 @@ export function BtopTerminalView({
                     </div>
 
                     <div className="border-t border-dashed border-current/20 pt-1 text-[10px] flex justify-between text-current/60">
-                      <span>网络接口: eth0 (10Gbps)</span>
-                      <span>MTU: 1500</span>
+                      <span>Cluster ▼ {formatRate(clusterStats.totalDown)} ▲ {formatRate(clusterStats.totalUp)}</span>
+                      <span>btop++ theme</span>
                     </div>
                   </div>
                 </div>
@@ -1387,49 +1345,55 @@ export function BtopTerminalView({
                   </div>
 
                   <div className="flex-1 min-h-0 space-y-1 overflow-y-auto no-scrollbar text-xs">
-                    {pingTargets.map((p, idx) => (
-                      <div
-                        key={idx}
-                        className="grid grid-cols-12 items-center py-1 px-1.5 border border-current/10 hover:bg-current/5 transition-colors"
-                      >
-                        <div className="col-span-5 flex items-center gap-1.5 truncate">
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                              p.latency_ms < 50
-                                ? "bg-emerald-500"
-                                : p.latency_ms < 120
-                                ? "bg-amber-500"
-                                : "bg-rose-500"
-                            }`}
-                          />
-                          <span className="font-semibold truncate">{p.label}</span>
-                        </div>
-                        <span className={`col-span-2 text-[10px] font-mono truncate ${colors.textMuted}`}>
-                          {p.target.replace(".com", "").replace(".cn", "")}
-                        </span>
-                        <span
-                          className={`col-span-2 text-right font-mono font-bold ${
-                            p.latency_ms < 50
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : p.latency_ms < 120
-                              ? colors.warn
-                              : colors.alert
-                          }`}
-                        >
-                          {p.latency_ms.toFixed(1)} ms
-                        </span>
-                        <span className="col-span-1 text-right font-mono">
-                          {p.packet_loss > 0 ? (
-                            <span className={colors.alert}>{p.packet_loss.toFixed(0)}%</span>
-                          ) : (
-                            <span className={colors.textMuted}>0%</span>
-                          )}
-                        </span>
-                        <span className="col-span-2 text-right font-mono text-[11px] text-current/75">
-                          {p.jitter?.toFixed(1) || "1.0"}ms
-                        </span>
+                    {pingTargets.length === 0 ? (
+                      <div className={`py-6 text-center text-[11px] ${colors.textDim}`}>
+                        该节点未配置网络探测目标
                       </div>
-                    ))}
+                    ) : (
+                      pingTargets.map((p, idx) => (
+                        <div
+                          key={idx}
+                          className="grid grid-cols-12 items-center py-1 px-1.5 border border-current/10 hover:bg-current/5 transition-colors"
+                        >
+                          <div className="col-span-5 flex items-center gap-1.5 truncate">
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                                p.latency_ms < 50
+                                  ? "bg-emerald-500"
+                                  : p.latency_ms < 120
+                                  ? "bg-amber-500"
+                                  : "bg-rose-500"
+                              }`}
+                            />
+                            <span className="font-semibold truncate">{p.label}</span>
+                          </div>
+                          <span className={`col-span-2 text-[10px] font-mono truncate ${colors.textMuted}`}>
+                            {p.target.replace(".com", "").replace(".cn", "")}
+                          </span>
+                          <span
+                            className={`col-span-2 text-right font-mono font-bold ${
+                              p.latency_ms < 50
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : p.latency_ms < 120
+                                ? colors.warn
+                                : colors.alert
+                            }`}
+                          >
+                            {p.latency_ms.toFixed(1)} ms
+                          </span>
+                          <span className="col-span-1 text-right font-mono">
+                            {p.packet_loss > 0 ? (
+                              <span className={colors.alert}>{p.packet_loss.toFixed(0)}%</span>
+                            ) : (
+                              <span className={colors.textMuted}>0%</span>
+                            )}
+                          </span>
+                          <span className="col-span-2 text-right font-mono text-[11px] text-current/75">
+                            {p.jitter != null ? `${p.jitter.toFixed(1)}ms` : "--"}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -1443,7 +1407,7 @@ export function BtopTerminalView({
                     <span className="font-bold">财务资费、双向流量配额与主机规格</span>
                   </div>
                   <span className={`text-[11px] ${colors.accent} font-bold`}>
-                    {billing.currency} {billing.price} / {billing.billing_cycle || "月"}
+                    {billing.price ? `${billing.currency || "$"} ${billing.price} / ${cycleLabel(billing.billing_cycle)}` : "--"}
                   </span>
                 </div>
 
@@ -1452,20 +1416,22 @@ export function BtopTerminalView({
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div className="p-1.5 border border-current/20 bg-current/5">
                       <div className={`text-[10px] ${colors.textMuted}`}>到期时间 / EXPIRY</div>
-                      <div className="font-bold mt-0.5 truncate">{billing.expiry_date || "2026-11-28"}</div>
-                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400">剩余 {billing.remaining_days} 天</div>
+                      <div className="font-bold mt-0.5 truncate">{billing.expiry_date || "未设到期"}</div>
+                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                        {billing.remaining_days ? `剩余 ${billing.remaining_days} 天` : (billing.auto_renewal ? "自动续费" : "--")}
+                      </div>
                     </div>
                     <div className="p-1.5 border border-current/20 bg-current/5">
                       <div className={`text-[10px] ${colors.textMuted}`}>剩余价值 / VALUE</div>
                       <div className="font-bold mt-0.5 text-amber-600 dark:text-amber-400 truncate">
-                        ¥ {billing.remaining_value.toFixed(2)} CNY
+                        {billing.remaining_value ? `¥ ${billing.remaining_value.toFixed(2)} CNY` : "--"}
                       </div>
                       <div className={`text-[10px] ${colors.textMuted}`}>{billing.auto_renewal ? "自动续费" : "手动续费"}</div>
                     </div>
                     <div className="p-1.5 border border-current/20 bg-current/5">
                       <div className={`text-[10px] ${colors.textMuted}`}>线路运营商 / ISP</div>
-                      <div className="font-bold mt-0.5 truncate">{billing.provider || "DMIT Pro"}</div>
-                      <div className="text-[10px] text-indigo-500 dark:text-indigo-400">三网优化 GIA</div>
+                      <div className="font-bold mt-0.5 truncate">{billing.provider || "--"}</div>
+                      <div className="text-[10px] text-indigo-500 dark:text-indigo-400">{activeNode.region || "--"}</div>
                     </div>
                   </div>
 
@@ -1479,15 +1445,15 @@ export function BtopTerminalView({
                     <div className="grid grid-cols-3 gap-1 text-[11px] pt-1 border-t border-dashed border-current/20">
                       <div>
                         <span className={colors.textMuted}>▲ 上行: </span>
-                        <span>{formatBytes(billing.bandwidth_used_up || billing.bandwidth_used! * 0.4)}</span>
+                        <span>{usedSplit ? formatBytes(usedSplit.up) : "--"}</span>
                       </div>
                       <div>
                         <span className={colors.textMuted}>▼ 下行: </span>
-                        <span>{formatBytes(billing.bandwidth_used_down || billing.bandwidth_used! * 0.6)}</span>
+                        <span>{usedSplit ? formatBytes(usedSplit.down) : "--"}</span>
                       </div>
                       <div className="text-right">
                         <span className={colors.textMuted}>结算: </span>
-                        <span className="font-semibold">每月1日重置</span>
+                        <span className="font-semibold">{cycleLabel(billing.billing_cycle)}</span>
                       </div>
                     </div>
                   </div>
@@ -1496,12 +1462,12 @@ export function BtopTerminalView({
                   <div className="p-1.5 border border-current/15 bg-current/5 space-y-1 text-[11px]">
                     <div className="flex justify-between items-center">
                       <span className={colors.textMuted}>系统发行版:</span>
-                      <span className="font-semibold truncate">Linux 6.1.0 · Debian 12 (Bookworm) · KVM</span>
+                      <span className="font-semibold truncate">{activeNode.system?.os || "--"}{activeNode.system?.virtualization ? ` · ${activeNode.system.virtualization}` : ""}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className={colors.textMuted}>公网 IP 地址:</span>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono">{maskIP ? "**.***.***.**" : (activeNode.system?.public_ip || "127.0.0.1")}</span>
+                        <span className="font-mono">{maskIP ? "**.***.***.**" : (activeNode.system?.public_ip || "--")}</span>
                         <button
                           onClick={() => setMaskIP(!maskIP)}
                           className="hover:underline cursor-pointer text-[10px] opacity-80"
@@ -1580,29 +1546,29 @@ export function BtopTerminalView({
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>操作系统 / OS:</span>
-                  <span className="font-semibold">{activeNode.system?.os || "Debian GNU/Linux 13 (Bookworm)"}</span>
+                  <span className="font-semibold">{activeNode.system?.os || "--"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>内核版本 / KERNEL:</span>
-                  <span>{activeNode.system?.kernel || "6.12.43-amd64"}</span>
+                  <span>{activeNode.system?.kernel || "--"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>处理器 / CPU:</span>
-                  <span className="font-semibold">{cpuModel} ({cpuCores} Cores)</span>
+                  <span className="font-semibold">{cpuModel}{cpuCores > 0 ? ` (${cpuCores} Cores)` : ""}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>虚拟化 / VIRT:</span>
-                  <span>{activeNode.system?.virtualization || "KVM (Standard)"}</span>
+                  <span>{activeNode.system?.virtualization || "--"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>公网 IPv4:</span>
                   <span className="font-mono font-bold">
-                    {maskIP ? "**.***.***.**" : (activeNode.system?.public_ip || "127.0.0.1")}
+                    {maskIP ? "**.***.***.**" : (activeNode.system?.public_ip || "--")}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>公网 IPv6:</span>
-                  <span className="font-mono truncate max-w-[220px]">{activeNode.system?.public_ipv6 || "2400:8902::1"}</span>
+                  <span className="font-mono truncate max-w-[220px]">{activeNode.system?.public_ipv6 || "--"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>运行时长 / UPTIME:</span>
@@ -1610,7 +1576,7 @@ export function BtopTerminalView({
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>数据中心 / ISP:</span>
-                  <span className="truncate">{activeNode.billing?.provider || "DMIT Pro · GIA 优质三网优化"}</span>
+                  <span className="truncate">{activeNode.billing?.provider || "--"}</span>
                 </div>
               </div>
             </div>
@@ -1630,8 +1596,13 @@ export function BtopTerminalView({
                   </div>
                   <div className="w-full mt-0.5">[{renderBlockMeter(cpuPercent, 24)}]</div>
                   <div className="flex justify-between text-[10px] text-current/70 mt-0.5">
-                    <span>Tasks: {activeNode.system?.process_count || 87}</span>
-                    <span>Load: {(activeNode.system?.load_1 || 1.68).toFixed(2)} {(activeNode.system?.load_5 || 1.92).toFixed(2)} {(activeNode.system?.load_15 || 1.68).toFixed(2)}</span>
+                    <span>Tasks: {activeNode.system?.process_count != null ? activeNode.system.process_count : "--"}</span>
+                    <span>
+                      Load:{" "}
+                      {activeNode.system?.load_1 != null && activeNode.system.load_1 > 0
+                        ? `${activeNode.system.load_1.toFixed(2)} ${(activeNode.system?.load_5 || activeNode.system.load_1).toFixed(2)} ${(activeNode.system?.load_15 || activeNode.system.load_1).toFixed(2)}`
+                        : "--"}
+                    </span>
                   </div>
                 </div>
 
@@ -1644,7 +1615,6 @@ export function BtopTerminalView({
                   <div className="w-full mt-0.5">[{renderBlockMeter(memPercent, 24)}]</div>
                   <div className="flex justify-between text-[10px] text-current/70 mt-0.5">
                     <span>可用: {formatBytes(memAvail)}</span>
-                    <span>缓存: {formatBytes(memCached)}</span>
                     <span>空闲: {formatBytes(memFree)}</span>
                   </div>
                 </div>
@@ -1685,16 +1655,22 @@ export function BtopTerminalView({
               <div className="space-y-1.5 text-xs py-1">
                 <div className="flex justify-between font-bold">
                   <span className={colors.textMuted}>套餐资费 / PRICE:</span>
-                  <span className={colors.accent}>{billing.currency} {billing.price} / {billing.billing_cycle || "月"}</span>
+                  <span className={colors.accent}>{billing.price ? `${billing.currency || "$"} ${billing.price} / ${cycleLabel(billing.billing_cycle)}` : "--"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>到期时间 / EXPIRY:</span>
-                  <span className="font-bold">{billing.expiry_date || "2026-11-28"} (剩余 {billing.remaining_days} 天)</span>
+                  <span className="font-bold">
+                    {billing.expiry_date
+                      ? `${billing.expiry_date}${billing.remaining_days ? ` (剩余 ${billing.remaining_days} 天)` : ""}`
+                      : "未设到期 / 自动续费"}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className={colors.textMuted}>剩余价值 / VALUE:</span>
                   <span className="font-bold text-amber-600 dark:text-amber-400">
-                    ¥ {billing.remaining_value.toFixed(2)} CNY ({billing.auto_renewal ? "自动续费" : "手动续费"})
+                    {billing.remaining_value
+                      ? `¥ ${billing.remaining_value.toFixed(2)} CNY (${billing.auto_renewal ? "自动续费" : "手动续费"})`
+                      : "--"}
                   </span>
                 </div>
                 <div className="pt-1 border-t border-dashed border-current/20">
@@ -1707,16 +1683,16 @@ export function BtopTerminalView({
                 <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-dashed border-current/20">
                   <div>
                     <span className={colors.textMuted}>▲ 上行已用: </span>
-                    <span className="font-semibold">{formatBytes(billing.bandwidth_used_up || billing.bandwidth_used! * 0.4)}</span>
+                    <span className="font-semibold">{usedSplit ? formatBytes(usedSplit.up) : "--"}</span>
                   </div>
                   <div>
                     <span className={colors.textMuted}>▼ 下行已用: </span>
-                    <span className="font-semibold">{formatBytes(billing.bandwidth_used_down || billing.bandwidth_used! * 0.6)}</span>
+                    <span className="font-semibold">{usedSplit ? formatBytes(usedSplit.down) : "--"}</span>
                   </div>
                 </div>
                 <div className="flex justify-between text-[10px] text-current/60 pt-0.5">
-                  <span>流量重置: 每月1日 00:00</span>
-                  <span>线路优化: CN2 GIA / 9929 / CMIN2</span>
+                  <span>结算周期: {cycleLabel(billing.billing_cycle)}</span>
+                  <span>{billing.auto_renewal ? "自动续费" : "手动续费"}</span>
                 </div>
               </div>
             </div>
@@ -1728,20 +1704,26 @@ export function BtopTerminalView({
                 <span className={colors.accent}>PING TARGETS ({pingTargets.length})</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 py-1">
-                {pingTargets.map((p, idx) => (
-                  <div key={idx} className="p-1.5 border border-current/15 bg-current/5 space-y-0.5 text-xs">
-                    <div className="flex items-center justify-between font-bold">
-                      <span className="truncate text-[11px]">{p.label.split(" ")[0]}</span>
-                      <span className={`text-[11px] font-mono ${p.latency_ms < 50 ? "text-emerald-600 dark:text-emerald-400" : colors.warn}`}>
-                        {p.latency_ms.toFixed(1)} ms
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-[10px] text-current/70">
-                      <span className="truncate">{p.target.replace(".com", "").replace(".cn", "")}</span>
-                      <span>丢包: {p.packet_loss}%</span>
-                    </div>
+                {pingTargets.length === 0 ? (
+                  <div className={`col-span-full py-4 text-center text-[11px] ${colors.textDim}`}>
+                    该节点未配置网络探测目标
                   </div>
-                ))}
+                ) : (
+                  pingTargets.map((p, idx) => (
+                    <div key={idx} className="p-1.5 border border-current/15 bg-current/5 space-y-0.5 text-xs">
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="truncate text-[11px]">{p.label.split(" ")[0]}</span>
+                        <span className={`text-[11px] font-mono ${p.latency_ms < 50 ? "text-emerald-600 dark:text-emerald-400" : colors.warn}`}>
+                          {p.latency_ms.toFixed(1)} ms
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-current/70">
+                        <span className="truncate">{p.target.replace(".com", "").replace(".cn", "")}</span>
+                        <span>丢包: {p.packet_loss}%</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -1762,30 +1744,34 @@ export function BtopTerminalView({
               >
                 [ 📋 复制 Agent 安装命令 ]
               </button>
-              <button
-                onClick={() =>
-                  handleCopy(
-                    `ssh root@${activeNode.system?.public_ip || "127.0.0.1"}`,
-                    "SSH 连接命令"
-                  )
-                }
-                className="px-2 py-0.5 border border-current/30 hover:bg-current/10 cursor-pointer"
-                title="复制快速 SSH 登录命令"
-              >
-                [ 💻 复制 SSH 登录命令 ]
-              </button>
-              <button
-                onClick={() =>
-                  handleCopy(
-                    `mtr -rw -c 50 ${activeNode.system?.public_ip || "127.0.0.1"}`,
-                    "MTR 诊断命令"
-                  )
-                }
-                className="px-2 py-0.5 border border-current/30 hover:bg-current/10 cursor-pointer hidden sm:inline"
-                title="复制 MTR 路由回程测试命令"
-              >
-                [ 📡 复制 MTR 路由测试 ]
-              </button>
+              {activeNode.system?.public_ip && (
+                <button
+                  onClick={() =>
+                    handleCopy(
+                      `ssh root@${activeNode.system?.public_ip}`,
+                      "SSH 连接命令"
+                    )
+                  }
+                  className="px-2 py-0.5 border border-current/30 hover:bg-current/10 cursor-pointer"
+                  title="复制快速 SSH 登录命令"
+                >
+                  [ 💻 复制 SSH 登录命令 ]
+                </button>
+              )}
+              {activeNode.system?.public_ip && (
+                <button
+                  onClick={() =>
+                    handleCopy(
+                      `mtr -rw -c 50 ${activeNode.system?.public_ip}`,
+                      "MTR 诊断命令"
+                    )
+                  }
+                  className="px-2 py-0.5 border border-current/30 hover:bg-current/10 cursor-pointer hidden sm:inline"
+                  title="复制 MTR 路由回程测试命令"
+                >
+                  [ 📡 复制 MTR 路由测试 ]
+                </button>
+              )}
               {copiedText && (
                 <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-1 animate-pulse">
                   ✓ 已复制: {copiedText}

@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Theme-btop%2B%2B%20Terminal-cyan?style=flat-square&logo=linux" alt="btop++" />
   <img src="https://img.shields.io/badge/Compatibility-Komari%20%26%20Probe-emerald?style=flat-square" alt="Compatibility" />
-  <img src="https://img.shields.io/badge/Version-1.0.0-blue?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-1.0.1-blue?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/License-MIT-gray?style=flat-square" alt="License" />
 </p>
 
@@ -57,7 +57,7 @@
 cd themes
 
 # 下载并解压
-wget -O btop-terminal.zip https://github.com/wildalley/komari-theme-btop/releases/download/v1.0.0/btop-terminal.zip
+wget -O btop-terminal.zip https://github.com/wildalley/komari-theme-btop/releases/download/v1.0.1/btop-terminal.zip
 unzip btop-terminal.zip
 rm btop-terminal.zip
 
