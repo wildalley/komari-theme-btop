@@ -1,0 +1,545 @@
+@import "tailwindcss";
+
+
+/* Tailwind 4 defaults to `prefers-color-scheme` for `dark:`. This app toggles a
+   `.dark` class on <html> instead, so the variant is redefined to match that. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Inter and JetBrains Mono carry no CJK glyphs, so Noto Sans SC follows in
+     both stacks. Without it CJK fell through to whatever the OS had installed,
+     which made vertical metrics (and so text centering) machine-dependent. */
+  --font-sans: "Inter", "Noto Sans SC", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Noto Sans SC", ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, "PingFang SC", "Microsoft YaHei", monospace;
+
+  /* Arbitrary sizes (text-[11px]) emit font-size with no line-height, so those
+     elements inherited an ancestor's line-height set for a different size. These
+     named steps carry a line-height that fits Inter plus the CJK face, whose ink
+     box runs ~1.25x the font size. */
+  --text-9: 9px;
+  --text-9--line-height: 13px;
+  --text-10: 10px;
+  --text-10--line-height: 14px;
+  --text-11: 11px;
+  --text-11--line-height: 16px;
+
+  --color-cyber-bg: #09090b;
+  --color-cyber-card: rgba(24, 24, 27, 0.65);
+  --color-cyber-border: #27272a;
+  --color-cyber-glow: rgba(120, 119, 198, 0.15);
+
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-fade-in: fadeIn 0.3s ease-in-out;
+  --animate-border-beam: border-beam calc(var(--duration) * 1s) infinite linear;
+  --animate-shiny-text: shiny-text var(--shiny-speed, 8s) infinite;
+  --animate-gradient-flow: gradient-flow var(--bg-speed, 8s) linear infinite;
+  --animate-ripple: ripple var(--duration, 2s) ease calc(var(--i, 0) * 0.2s) infinite;
+
+  @keyframes fadeIn {
+    0% {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes border-beam {
+    100% {
+      offset-distance: 100%;
+    }
+  }
+
+  @keyframes shiny-text {
+    0%,
+    90%,
+    100% {
+      background-position: calc(-100% - var(--shiny-width)) 0;
+    }
+    30%,
+    60% {
+      background-position: calc(100% + var(--shiny-width)) 0;
+    }
+  }
+
+  @keyframes gradient-flow {
+    to {
+      background-position: var(--bg-size, 300%) 0;
+    }
+  }
+
+  @keyframes ripple {
+    0%,
+    100% {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0.28;
+    }
+    50% {
+      transform: translate(-50%, -50%) scale(0.9);
+      opacity: 0.12;
+    }
+  }
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #09090b;
+    color: #f4f4f5;
+    overflow-x: hidden;
+  }
+
+  html.btop body,
+  html[data-theme="btop"] body {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    background-color: #06080d;
+    color: #e2e8f0;
+  }
+
+  /* Universal Monospace & Terminal styling for btop theme */
+  html.btop,
+  html.btop *,
+  html[data-theme="btop"],
+  html[data-theme="btop"] * {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  /* Enforce crisp sharp terminal window corners in btop mode */
+  html.btop .rounded-2xl,
+  html.btop .rounded-xl,
+  html.btop .rounded-lg,
+  html.btop .rounded-md,
+  html[data-theme="btop"] .rounded-2xl,
+  html[data-theme="btop"] .rounded-xl,
+  html[data-theme="btop"] .rounded-lg,
+  html[data-theme="btop"] .rounded-md {
+    border-radius: 2px !important;
+  }
+
+  /* Inverted terminal reverse-video text selection */
+  html.btop ::selection,
+  html[data-theme="btop"] ::selection {
+    background: #00f0ff !important;
+    color: #06080d !important;
+  }
+
+  html.btop-light body,
+  html[data-theme="btop-light"] body {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    background-color: #ebe7ee;
+    color: #2b2735;
+  }
+
+  /* Universal Monospace & Terminal styling for btop-light theme */
+  html.btop-light,
+  html.btop-light *,
+  html[data-theme="btop-light"],
+  html[data-theme="btop-light"] * {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  /* Enforce crisp sharp terminal window corners in btop-light mode */
+  html.btop-light .rounded-2xl,
+  html.btop-light .rounded-xl,
+  html.btop-light .rounded-lg,
+  html.btop-light .rounded-md,
+  html[data-theme="btop-light"] .rounded-2xl,
+  html[data-theme="btop-light"] .rounded-xl,
+  html[data-theme="btop-light"] .rounded-lg,
+  html[data-theme="btop-light"] .rounded-md {
+    border-radius: 2px !important;
+  }
+
+  /* Inverted terminal reverse-video text selection for btop-light */
+  html.btop-light ::selection,
+  html[data-theme="btop-light"] ::selection {
+    background: #7c5c99 !important;
+    color: #ffffff !important;
+  }
+
+  html.blueprint:not(.dark):not(.blueprint-dark) body,
+  html[data-theme="blueprint-light"] body,
+  html[data-theme="light"] body {
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  html.blueprint-dark body,
+  html[data-theme="blueprint-dark"] body {
+    background-color: #070e1e;
+    color: #e2e8f0;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* ==========================================================================
+   HeroUI Overlays, Popovers, Dropdowns & Calendar High Contrast Theme Styles
+   ========================================================================== */
+
+/* Popover & Floating Panels (Select, DatePicker, Dropdown) */
+.popover,
+[data-slot="popover"],
+[data-slot="date-picker-popover"],
+.date-picker__popover,
+.select__popover {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+}
+
+.dark .popover,
+.dark [data-slot="popover"],
+.dark [data-slot="date-picker-popover"],
+.dark .date-picker__popover,
+.dark .select__popover,
+[data-theme="dark"] .popover,
+[data-theme="dark"] [data-slot="popover"],
+[data-theme="dark"] [data-slot="date-picker-popover"],
+[data-theme="dark"] .date-picker__popover,
+[data-theme="dark"] .select__popover {
+  background-color: #18181b !important;
+  color: #f4f4f5 !important;
+  border: 1px solid #27272a !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* ListBox & Dropdown Items */
+.list-box-item,
+[data-slot="list-box-item"] {
+  color: #1e293b !important;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 0.5rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.list-box-item:hover,
+.list-box-item[data-hovered="true"],
+[data-slot="list-box-item"]:hover,
+[data-slot="list-box-item"][data-hovered="true"] {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.list-box-item[data-selected="true"],
+.list-box-item[aria-selected="true"],
+[data-slot="list-box-item"][data-selected="true"],
+[data-slot="list-box-item"][aria-selected="true"] {
+  background-color: #e0e7ff !important;
+  color: #4338ca !important;
+  font-weight: 600;
+}
+
+.dark .list-box-item,
+.dark [data-slot="list-box-item"],
+[data-theme="dark"] .list-box-item,
+[data-theme="dark"] [data-slot="list-box-item"] {
+  color: #e4e4e7 !important;
+}
+
+.dark .list-box-item:hover,
+.dark .list-box-item[data-hovered="true"],
+.dark [data-slot="list-box-item"]:hover,
+.dark [data-slot="list-box-item"][data-hovered="true"],
+[data-theme="dark"] .list-box-item:hover,
+[data-theme="dark"] .list-box-item[data-hovered="true"],
+[data-theme="dark"] [data-slot="list-box-item"]:hover,
+[data-theme="dark"] [data-slot="list-box-item"][data-hovered="true"] {
+  background-color: #27272a !important;
+  color: #fafafa !important;
+}
+
+.dark .list-box-item[data-selected="true"],
+.dark .list-box-item[aria-selected="true"],
+.dark [data-slot="list-box-item"][data-selected="true"],
+.dark [data-slot="list-box-item"][aria-selected="true"],
+[data-theme="dark"] .list-box-item[data-selected="true"],
+[data-theme="dark"] .list-box-item[aria-selected="true"],
+[data-theme="dark"] [data-slot="list-box-item"][data-selected="true"],
+[data-theme="dark"] [data-slot="list-box-item"][aria-selected="true"] {
+  background-color: rgba(99, 102, 241, 0.2) !important;
+  color: #a5b4fc !important;
+  font-weight: 600;
+}
+
+.btop .popover,
+.btop [data-slot="popover"],
+.btop [data-slot="date-picker-popover"],
+.btop .date-picker__popover,
+.btop .select__popover {
+  background-color: #080c14 !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #1b253b !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.8), 0 0 15px rgba(0, 240, 255, 0.08) !important;
+}
+
+.btop .list-box-item:hover,
+.btop [data-slot="list-box-item"]:hover {
+  background-color: #121927 !important;
+  color: #38bdf8 !important;
+}
+
+.btop .list-box-item[data-selected="true"],
+.btop [data-slot="list-box-item"][data-selected="true"] {
+  background-color: rgba(6, 182, 212, 0.25) !important;
+  color: #22d3ee !important;
+}
+
+.btop-light .popover,
+.btop-light [data-slot="popover"],
+.btop-light [data-slot="date-picker-popover"],
+.btop-light .date-picker__popover,
+.btop-light .select__popover {
+  background-color: #f2eef5 !important;
+  color: #2b2735 !important;
+  border: 1px solid #aba4b8 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15) !important;
+}
+
+.btop-light .list-box-item:hover,
+.btop-light [data-slot="list-box-item"]:hover {
+  background-color: #ded8e6 !important;
+  color: #2b2735 !important;
+}
+
+.btop-light .list-box-item[data-selected="true"],
+.btop-light [data-slot="list-box-item"][data-selected="true"] {
+  background-color: rgba(124, 92, 153, 0.2) !important;
+  color: #7c5c99 !important;
+}
+
+.list-box-item__indicator {
+  color: #4338ca !important;
+}
+.dark .list-box-item__indicator,
+[data-theme="dark"] .list-box-item__indicator {
+  color: #a5b4fc !important;
+}
+
+/* Select Trigger Borders */
+.select__trigger,
+[data-slot="select-trigger"] {
+  border: 1px solid #cbd5e1;
+}
+.select__trigger:hover,
+[data-slot="select-trigger"]:hover {
+  border-color: #94a3b8;
+}
+.dark .select__trigger,
+.dark [data-slot="select-trigger"],
+[data-theme="dark"] .select__trigger,
+[data-theme="dark"] [data-slot="select-trigger"] {
+  border: 1px solid #27272a;
+}
+.dark .select__trigger:hover,
+.dark [data-slot="select-trigger"]:hover,
+[data-theme="dark"] .select__trigger:hover,
+[data-theme="dark"] [data-slot="select-trigger"]:hover {
+  border-color: #3f3f46;
+}
+
+/* Calendar Styles */
+.calendar {
+  color: inherit;
+}
+.calendar__heading {
+  color: #0f172a;
+  font-weight: 600;
+}
+.dark .calendar__heading,
+[data-theme="dark"] .calendar__heading {
+  color: #f4f4f5;
+}
+
+.calendar__header-cell {
+  color: #64748b;
+  font-weight: 600;
+  font-size: 11px;
+}
+.dark .calendar__header-cell,
+[data-theme="dark"] .calendar__header-cell {
+  color: #a1a1aa;
+}
+
+.calendar__cell {
+  color: #1e293b;
+  font-weight: 500;
+  border-radius: 9999px;
+  transition: all 0.15s ease;
+}
+.calendar__cell:hover:not([data-selected="true"]) {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+.calendar__cell[data-selected="true"] {
+  background-color: #4f46e5 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(79, 70, 229, 0.3);
+}
+.calendar__cell[data-today="true"]:not([data-selected="true"]) {
+  border: 1px solid #6366f1;
+  color: #4338ca;
+  font-weight: 600;
+}
+
+.dark .calendar__cell {
+  color: #e4e4e7;
+}
+.dark .calendar__cell:hover:not([data-selected="true"]) {
+  background-color: #27272a;
+  color: #fafafa;
+}
+.dark .calendar__cell[data-selected="true"] {
+  background-color: #6366f1 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.4);
+}
+.dark .calendar__cell[data-today="true"]:not([data-selected="true"]) {
+  border: 1px solid #818cf8;
+  color: #a5b4fc;
+  font-weight: 600;
+}
+
+.calendar__nav-button {
+  color: #64748b;
+  border-radius: 0.5rem;
+  padding: 0.25rem;
+  transition: all 0.15s ease;
+}
+.calendar__nav-button:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+.dark .calendar__nav-button {
+  color: #a1a1aa;
+}
+.dark .calendar__nav-button:hover {
+  background-color: #27272a;
+  color: #fafafa;
+}
+
+/* Cyber dark background grid pattern */
+.cyber-grid {
+  background-size: 40px 40px;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+/* btop++ terminal retro-grid pattern */
+.btop-grid {
+  background-color: #06080d;
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(0, 240, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 240, 255, 0.04) 1px, transparent 1px);
+}
+
+/* btop++ light terminal paper-grid pattern */
+.btop-light-grid {
+  background-color: #ebe7ee;
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(124, 92, 153, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(124, 92, 153, 0.05) 1px, transparent 1px);
+}
+
+/* Blueprint architecture graph paper background pattern (Light) */
+.blueprint-grid {
+  background-color: #f1f5f9;
+  background-size: 24px 24px;
+  background-image:
+    linear-gradient(to right, rgba(203, 213, 225, 0.5) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(203, 213, 225, 0.5) 1px, transparent 1px);
+}
+
+/* Blueprint architecture graph paper background pattern (Cyanotype Dark) */
+.blueprint-grid-dark {
+  background-color: #070e1e;
+  background-size: 24px 24px;
+  background-image:
+    linear-gradient(to right, rgba(56, 189, 248, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+}
+
+html.blueprint-dark body {
+  background-color: #070e1e;
+  color: #e2e8f0;
+}
+
+/* Subtle ambient radial glow behind header */
+.ambient-glow {
+  background: radial-gradient(circle at 50% -20%, rgba(99, 102, 241, 0.15), transparent 70%);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(24, 24, 27, 0.5);
+}
+html.btop ::-webkit-scrollbar-track {
+  background: #06080d;
+}
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+html.btop ::-webkit-scrollbar-thumb {
+  background: #1b253b;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+html.btop ::-webkit-scrollbar-thumb:hover {
+  background: #25334e;
+}
+
+/* uPlot styles */
+.uplot {
+  font-family: var(--font-mono);
+  user-select: none;
+}
+
+.uplot .u-wrap {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.uplot .u-axis {
+  position: absolute !important;
+  color: #71717a !important;
+}
+
+.uplot .u-cursor-x,
+.uplot .u-cursor-y {
+  position: absolute !important;
+  pointer-events: none !important;
+}
+
+.uplot .u-cursor-x {
+  border-right: 1px dashed rgba(129, 140, 248, 0.4) !important;
+}
+
+.uplot .u-cursor-y {
+  border-bottom: 1px dashed rgba(129, 140, 248, 0.4) !important;
+}
