@@ -2,7 +2,7 @@
   "name": "btop++ 极客终端",
   "short": "btop-terminal",
   "description": "真实还原 Linux 顶级终端监控工具 btop++ 的硬核字符与色块风格，高刷新率、多节点聚合看板与终端沉浸体验",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "wildalley",
   "url": "https://github.com/wildalley/komari-theme-btop",
   "preview": "preview.png",

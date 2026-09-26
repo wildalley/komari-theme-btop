@@ -34,6 +34,7 @@ import {
 import { NodeState, ThemeMode, PingStat, BillingInfo } from "../types";
 import { formatBytes, formatRate } from "../utils/format";
 import { usedTrafficSplit } from "../utils/traffic";
+import { BtopWaveCanvas } from "./BtopWaveCanvas";
 import { getRegionFlag } from "../utils/flags";
 
 /** 计费周期的中文短标签，与主项目后台的周期取值保持一致。 */
@@ -146,20 +147,6 @@ const BlockMeterFill: React.FC<{
     </div>
   );
 };
-
-// One braille waveform row drawn as fixed-width cells. Braille glyphs
-// (U+28xx) often fall back to a non-monospace font, which makes columns
-// drift apart and misalign while the wave scrolls — fixed cells pin every
-// column to the same grid.
-const BrailleLine: React.FC<{ line: string; className?: string }> = ({ line, className }) => (
-  <div className={className}>
-    {line.split("").map((ch, i) => (
-      <span key={i} className="inline-block w-[8px] text-center leading-none">
-        {ch}
-      </span>
-    ))}
-  </div>
-);
 
 export function BtopTerminalView({
   nodes,
@@ -454,25 +441,6 @@ export function BtopTerminalView({
     };
   }, [isLight]);
 
-  // Rolling CPU & Net history buffer for Braille graph — 从全零开始累积，
-  // 只画真实采样，绝不预填一段假波形。
-  const [cpuHistory, setCpuHistory] = useState<number[]>(() => new Array(72).fill(0));
-  const [netHistory, setNetHistory] = useState<number[]>(() => new Array(72).fill(0));
-
-  useEffect(() => {
-    if (!activeNode) return;
-    const currentCpu = activeNode.cpu || activeNode.system?.cpu_percent || 0;
-    setCpuHistory((prev) => [...prev.slice(1), currentCpu]);
-
-    const currentNetRate = (activeNode.network?.rate_download || 0) / 1024;
-    setNetHistory((prev) => [...prev.slice(1), Math.round(currentNetRate)]);
-  }, [activeNode?.cpu, activeNode?.network?.rate_download, activeNode?.last_seen]);
-
-  // Network throughput dynamic scale
-  const maxNetRate = useMemo(() => {
-    return Math.max(20, ...netHistory);
-  }, [netHistory]);
-
   // Metrics resolution — 所有缺省一律为 0 / "--"，不编造任何看似真实的数值。
   const cpuPercent = activeNode?.cpu || activeNode?.system?.cpu_percent || 0;
   const cpuCores = activeNode?.system?.cpu_count || 0;
@@ -564,43 +532,6 @@ export function BtopTerminalView({
       totalUp,
     };
   }, [nodes]);
-
-  // Render Multi-row Braille waveform (Filled continuous mountain wave)
-  const renderBrailleMatrix = (
-    history: number[],
-    rows = 6,
-    maxValOverride?: number
-  ) => {
-    const lines: string[] = [];
-    const maxVal = maxValOverride ?? Math.max(10, ...history);
-
-    for (let r = rows - 1; r >= 0; r--) {
-      const chars: string[] = [];
-      const rowBottom = (r / rows) * maxVal;
-      const rowTop = ((r + 1) / rows) * maxVal;
-      const rowSpan = rowTop - rowBottom;
-
-      for (let i = 0; i < history.length - 1; i += 2) {
-        const v1 = history[i] ?? 0;
-        const v2 = history[i + 1] ?? 0;
-
-        let h1 = 0;
-        let h2 = 0;
-
-        if (v1 >= rowTop) h1 = 4;
-        else if (v1 <= rowBottom) h1 = 0;
-        else h1 = Math.max(1, Math.min(4, Math.round(((v1 - rowBottom) / rowSpan) * 4)));
-
-        if (v2 >= rowTop) h2 = 4;
-        else if (v2 <= rowBottom) h2 = 0;
-        else h2 = Math.max(1, Math.min(4, Math.round(((v2 - rowBottom) / rowSpan) * 4)));
-
-        chars.push(brailleChar(h1, h2));
-      }
-      lines.push(chars.join(""));
-    }
-    return lines;
-  };
 
   // Render Discrete Block Meter
   const renderBlockMeter = (percent: number, totalBlocks = 24) => {
@@ -1154,12 +1085,10 @@ export function BtopTerminalView({
 
             {/* Cores Breakdown C0-C15 + Multi-row Braille Wave on left */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-              {/* Braille Wave Pattern on Left (Takes 4 cols, filled wave) */}
+              {/* Canvas 盲文点阵波形 (Takes 4 cols) */}
               <div className="hidden md:flex md:col-span-4 flex-col justify-center font-mono leading-none py-1">
-                <div className="space-y-0.5 overflow-hidden">
-                  {renderBrailleMatrix(cpuHistory, 6, 100).map((line, idx) => (
-                    <BrailleLine key={idx} line={line} className={`leading-none whitespace-nowrap overflow-hidden text-xs ${colors.meterActiveText}`} />
-                  ))}
+                <div className="w-full h-[72px] border border-current/15 bg-current/5 p-1 relative">
+                  <BtopWaveCanvas downRate={cpuPercent} mode="cpu" colors={colors} isLight={isLight} title="CPU LOAD WAVE" />
                 </div>
                 <div className="text-[10px] mt-1.5 font-bold select-none">{uptimeStr}</div>
               </div>
@@ -1301,25 +1230,17 @@ export function BtopTerminalView({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center text-xs flex-1 min-h-0 overflow-hidden">
-                  {/* Left throughput Braille chart (6-row filled continuous wave) */}
-                  <div className="sm:col-span-6 flex flex-col justify-between h-full p-1.5 border border-current/15 font-mono select-none">
-                    <div className="flex justify-between text-[10px]">
-                      <span className={colors.textMuted}>▲ {maxNetRate} KiB/s</span>
-                      <span className={colors.accent}>BANDWIDTH WAVE</span>
-                    </div>
-                    <div className="my-auto space-y-0.5 overflow-hidden">
-                      {renderBrailleMatrix(netHistory, 6, maxNetRate).map((line, idx) => (
-                        <BrailleLine
-                          key={idx}
-                          line={line}
-                          className={`text-xs leading-none whitespace-nowrap overflow-hidden font-mono ${colors.meterActiveText}`}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex justify-between text-[10px]">
-                      <span className={colors.textMuted}>0 B/s</span>
-                      <span className={colors.textDim}>auto-scale</span>
-                    </div>
+                  {/* Left throughput Canvas 盲文点阵波形 */}
+                  <div className="sm:col-span-6 flex flex-col h-full p-1.5 border border-current/15 font-mono select-none">
+                    <BtopWaveCanvas
+                      downRate={netDownRate}
+                      upRate={netUpRate}
+                      mode="net"
+                      colors={colors}
+                      isLight={isLight}
+                      title="BANDWIDTH WAVE"
+                      className="w-full flex-1 min-h-[120px]"
+                    />
                   </div>
 
                   {/* Right download / upload stats */}
