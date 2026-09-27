@@ -3,7 +3,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Theme-btop%2B%2B%20Terminal-cyan?style=flat-square&logo=linux" alt="btop++" />
   <img src="https://img.shields.io/badge/Compatibility-Komari%20%26%20Probe-emerald?style=flat-square" alt="Compatibility" />
-  <img src="https://img.shields.io/badge/Version-1.0.3-blue?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Version-1.0.4-blue?style=flat-square" alt="Version" />
   <img src="https://img.shields.io/badge/License-MIT-gray?style=flat-square" alt="License" />
 </p>
 
@@ -25,26 +25,28 @@
 
 - **纯正 btop++ TUI 终端美学**：采用纯直角硬朗形态、全等宽字体与字符边框，原汁原味还原原生 Linux 终端监控交互。
 - **高保真动态图谱**：
-  - 基于 Unicode Braille（盲文点阵 `⡇⡎⡍⣹⣽⣻⣷⣾⣿`）渲染 CPU 核心波形、内存梯级占用与网卡即时吞吐字符画；
-  - 18 格与 10 格分段式霓虹发光量表，多状态高密度实时呈现。
+  - Canvas 绘制盲文点阵 CPU 与网络波形，使用真实采样数据；
+  - 分段量表随容器宽度铺满，括号贴边；占用达到 65% / 85% 时分别切换警告色 / 告警色。
 - **三重视图自由穿梭**：
   - `[1] hosts`：集群多节点汇总与实时列表，支持根据地区、状态过滤、实时排序及关键字检索；
-  - `[2] monitor`：拟真单机终端监控，包含 CPU 核心群、内存与 Swap 占用、磁盘 I/O、实时上下行网速、三网 Ping 与延迟抖动矩阵、财务到期计费等；
-  - `[3] details`：全屏四大诊断象限（系统环境、计费与汇率、网络诊断、磁盘分区与实时曲线）。
+  - `[2] monitor`：单机终端监控，包含 CPU 负载、内存与 Swap 占用、根分区使用率、实时上下行网速、Ping 探测和资费信息；
+  - `[3] details`：全屏诊断象限，展示系统环境、资源负载、网络速率、计费与探测目标。
 - **双色终端外观**：
   - 🌙 **暗色终端（btop++ Dark）**：经典深黑底色配霓虹青绿与暗紫量表；
   - ☀️ **截图浅色（btop++ Light）**：原汁原味还原 btop++ 官方淡灰紫复古终端高亮外观，适合明亮环境与汇报截图。
 - **双通道协议自适应**：
   - 接入 **Cyber Probe** 时，自动启用秒级原生高频 WebSocket 数据流；
   - 接入 **Komari 监控** 时，自动无缝适配 `/api/nodes` 与 `/api/clients` 协议。
-- **隐私脱敏支持**：右上角提供一键【遮掩 IP / 显示 IP】切换，公开展示无泄露风险。
+- **真实指标与缺省状态**：不填入虚构的主频、温度、功耗、挂载盘或网卡速率；网络指标说明为物理网卡汇总。无法获得的部分字段显示 `--`，未设置流量配额时显示「无限制」。
+- **路由兼容**：静态资源使用站点根路径，在 `/` 和 `/dashboard` 页面下都能正常加载。
+- **隐私脱敏支持**：提供一键【遮掩 IP / 显示 IP】切换。
 
 ---
 
 ## 🚀 安装与使用 (Installation)
 
-### 方式一：Komari / Probe 管理后台一键上传（推荐）
-1. 在 [Releases 页面](https://github.com/wildalley/komari-theme-btop/releases) 下载最新发行版压缩包 `btop-terminal.zip`；
+### 方式一：Komari / Probe 管理后台上传（推荐）
+1. [下载仓库中的最新插件包 `btop-terminal.zip`](https://raw.githubusercontent.com/wildalley/komari-theme-btop/main/btop-terminal.zip)；
 2. 登录您的 Komari 或 Cyber Probe 管理后台（`/admin`）；
 3. 进入「主题中心」 $\rightarrow$ 点击「上传本地主题包」 $\rightarrow$ 选择 `btop-terminal.zip`；
 4. 点击「设为生效」即可完成安装与切换。
@@ -53,16 +55,25 @@
 直接在服务器端将本仓库克隆或解压至主题目录：
 
 ```bash
-# 进入探针程序所在的主题目录
-cd themes
+# 在 Probe 服务端工作目录执行；若设置了 PROBE_THEMES_DIR，请替换 themes
+mkdir -p themes/btop-terminal
+wget -O themes/btop-terminal.zip https://raw.githubusercontent.com/wildalley/komari-theme-btop/main/btop-terminal.zip
+unzip -o themes/btop-terminal.zip -d themes/btop-terminal
 
-# 下载并解压
-wget -O btop-terminal.zip https://github.com/wildalley/komari-theme-btop/releases/download/v1.0.3/btop-terminal.zip
-unzip btop-terminal.zip
-rm btop-terminal.zip
-
-# 重启探针服务端后，在后台主题中心启用即可
+# 重启服务端后，在后台主题中心启用
 ```
+
+---
+
+## 🔧 从源码打包
+
+```bash
+npm ci
+npm run build
+python3 -m zipfile -c btop-terminal.zip komari-theme.json preview.png preview-hosts.png LICENSE README.md dist
+```
+
+ZIP 根目录必须包含 `komari-theme.json` 和 `dist/index.html`。请从仓库根目录执行打包命令，避免在压缩包里多出一层父目录。
 
 ---
 

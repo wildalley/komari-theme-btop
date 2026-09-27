@@ -112,38 +112,52 @@ function formatBtopUptime(uptimeSeconds: number): string {
 // fixed character count in wide layouts.
 const BlockMeterFill: React.FC<{
   percent: number;
-  colors: { meterActiveText: string; meterEmptyText: string };
+  colors: { meterActiveText: string; meterEmptyText: string; alert?: string; warn?: string };
 }> = ({ percent, colors }) => {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(0);
+  const [smoothPercent, setSmoothPercent] = useState(percent);
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => setWidth(el.clientWidth);
-    update();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    let animId: number;
+    const startTime = performance.now();
+    const startVal = smoothPercent;
+    const targetVal = Math.min(100, Math.max(0, percent));
+    const duration = 350; // 350ms smooth cubic glide
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setSmoothPercent(startVal + (targetVal - startVal) * eased);
+      if (progress < 1) {
+        animId = requestAnimationFrame(step);
+      }
+    };
+    animId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animId);
+  }, [percent]);
 
-  // ≈7px per monospace cell at text-[11px]/xs, minus the two brackets; clamped
-  // so extreme widths cannot explode the string length.
-  const blocks = width > 0 ? Math.max(6, Math.min(240, Math.floor((width - 14) / 7))) : 32;
-  const safeVal = Math.min(100, Math.max(0, percent));
-  const activeBlocks = Math.round((safeVal / 100) * blocks);
-  const filled = "█".repeat(activeBlocks);
-  const empty = "░".repeat(blocks - activeBlocks);
-
+  const safeVal = Math.min(100, Math.max(0, smoothPercent));
+  // btop 的量表随负载变色：65% 起转警告色，85% 起转告警色。
+  const tone = safeVal >= 85 ? colors.alert : safeVal >= 65 ? colors.warn : undefined;
+  // 格子用 CSS 渐变画：宽度随容器伸缩，右括号永远贴边。按字符宽度估算格数时
+  // 字形一旦比估算宽，行尾的 "]" 就会被裁掉。
+  const cells = "repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 7px)";
   return (
-    <div ref={ref} className="w-full overflow-hidden whitespace-nowrap">
-      [
-      <span className="tracking-tight select-none">
-        <span className={colors.meterActiveText}>{filled}</span>
-        <span className={colors.meterEmptyText}>{empty}</span>
-      </span>
-      ]
+    <div
+      className="w-full flex items-center gap-[3px] leading-none select-none"
+      role="meter"
+      aria-valuenow={Math.round(safeVal)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <span>[</span>
+      <div className="relative flex-1 h-[0.8em]">
+        <div className={`absolute inset-0 ${colors.meterEmptyText}`} style={{ backgroundImage: cells }} />
+        <div
+          className={`absolute inset-y-0 left-0 ${tone || colors.meterActiveText}`}
+          style={{ width: `${safeVal}%`, backgroundImage: cells }}
+        />
+      </div>
+      <span>]</span>
     </div>
   );
 };
@@ -411,7 +425,7 @@ export function BtopTerminalView({
         borderColor: "#aba4b8",
         meterBlockActive: "#352f44",
         meterActiveText: "text-[#352f44]",
-        meterEmptyText: "text-[#ded8e6]",
+        meterEmptyText: "text-[#cbc3d6]",
         accent: "text-[#7c5c99]",
         accentBg: "bg-[#7c5c99]",
         selectedBg: "bg-[#ded8e6]",
@@ -430,7 +444,7 @@ export function BtopTerminalView({
       borderColor: "#262d42",
       meterBlockActive: "#00f0ff",
       meterActiveText: "text-[#00f0ff]",
-      meterEmptyText: "text-[#182035]",
+      meterEmptyText: "text-[#243049]",
       accent: "text-[#00f0ff]",
       accentBg: "bg-[#00f0ff]",
       selectedBg: "bg-[#18243c]",
@@ -533,19 +547,6 @@ export function BtopTerminalView({
     };
   }, [nodes]);
 
-  // Render Discrete Block Meter
-  const renderBlockMeter = (percent: number, totalBlocks = 24) => {
-    const safeVal = Math.min(100, Math.max(0, percent));
-    const activeBlocks = Math.round((safeVal / 100) * totalBlocks);
-    const filled = "█".repeat(activeBlocks);
-    const empty = "░".repeat(totalBlocks - activeBlocks);
-    return (
-      <span className="tracking-tight select-none">
-        <span className={colors.meterActiveText}>{filled}</span>
-        <span className={colors.meterEmptyText}>{empty}</span>
-      </span>
-    );
-  };
 
   return (
     <div
@@ -1177,7 +1178,7 @@ export function BtopTerminalView({
                           </span>
                         </div>
                       </div>
-                      <div className="w-full mt-0.5">[{renderBlockMeter(memPercent, 20)}]</div>
+                      <div className="w-full mt-0.5"><BlockMeterFill percent={memPercent} colors={colors} /></div>
                     </div>
                     <div>
                       <div className="flex justify-between items-center">
@@ -1189,7 +1190,7 @@ export function BtopTerminalView({
                           </span>
                         </div>
                       </div>
-                      <div className="w-full mt-0.5">[{renderBlockMeter((memAvail / memTotal) * 100, 20)}]</div>
+                      <div className="w-full mt-0.5"><BlockMeterFill percent={memTotal > 0 ? (memAvail / memTotal) * 100 : 0} colors={colors} /></div>
                     </div>
                     <div className="flex justify-between text-[11px] pt-1 border-t border-dashed border-current/20">
                       <span className={colors.textMuted}>Free RAM:</span>
@@ -1204,7 +1205,7 @@ export function BtopTerminalView({
                         <span className="font-bold">root ( / )</span>
                         <span className="font-bold">{formatBytes(diskUsed)} / {formatBytes(diskTotal)}</span>
                       </div>
-                      <div className="w-full mt-0.5">[{renderBlockMeter(diskPercent, 20)}]</div>
+                      <div className="w-full mt-0.5"><BlockMeterFill percent={diskPercent} colors={colors} /></div>
                       <div className="flex justify-between text-[11px] mt-0.5">
                         <span className={colors.textMuted}>root 分区占用:</span>
                         <span className="font-semibold">{diskPercent.toFixed(1)}%</span>
@@ -1216,7 +1217,7 @@ export function BtopTerminalView({
                         <span className="font-bold">Virtual Swap</span>
                         <span>{swapTotal > 0 ? `${formatBytes(swapUsed)} / ${formatBytes(swapTotal)}` : "未启用"}</span>
                       </div>
-                      <div className="w-full mt-0.5">[{renderBlockMeter(swapPercent, 20)}]</div>
+                      <div className="w-full mt-0.5"><BlockMeterFill percent={swapPercent} colors={colors} /></div>
                       <div className="flex justify-between text-[11px] mt-0.5">
                         <span className={colors.textMuted}>Swap 占用:</span>
                         <span>{swapTotal > 0 ? `${swapPercent.toFixed(1)}%` : "--"}</span>
@@ -1235,7 +1236,7 @@ export function BtopTerminalView({
                     <span className={colors.textMuted}>sync</span>
                     <span className={colors.textMuted}>auto</span>
                     <span className={colors.textDim}>──</span>
-                    <span className="font-bold">←b nic n→</span>
+                    <span className="font-bold" title="Agent 汇总全部物理网卡，已排除 lo / docker / veth / 隧道等虚拟接口">←b ∑ 物理网卡 n→</span>
                   </div>
                   <span className={`text-[11px] ${colors.textMuted}`}>TOTAL RECV: {formatBytes(netTotalDown)}</span>
                 </div>
@@ -1296,7 +1297,7 @@ export function BtopTerminalView({
 
                     <div className="border-t border-dashed border-current/20 pt-1 text-[10px] flex justify-between text-current/60">
                       <span>Cluster ▼ {formatRate(clusterStats.totalDown)} ▲ {formatRate(clusterStats.totalUp)}</span>
-                      <span>btop++ theme</span>
+                      <span>TCP {activeNode.network?.tcp_established ?? "--"} · UDP {activeNode.network?.udp_established ?? "--"}</span>
                     </div>
                   </div>
                 </div>
@@ -1422,8 +1423,8 @@ export function BtopTerminalView({
                   {/* Bandwidth Quota Progress Bar */}
                   <div className="p-1.5 border border-current/20 space-y-1">
                     <div className="flex justify-between items-center text-xs font-bold">
-                      <span>流量配额: {formatBytes(billing.bandwidth_used || 0)} / {formatBytes(billing.bandwidth_quota)}</span>
-                      <span className={colors.accent}>{quotaPercent}%</span>
+                      <span>流量配额: {formatBytes(billing.bandwidth_used || 0)} / {billing.bandwidth_quota > 0 ? formatBytes(billing.bandwidth_quota) : "无限制"}</span>
+                      <span className={colors.accent}>{billing.bandwidth_quota > 0 ? `${quotaPercent}%` : "--"}</span>
                     </div>
                     <BlockMeterFill percent={quotaPercent} colors={colors} />
                     <div className="grid grid-cols-3 gap-1 text-[11px] pt-1 border-t border-dashed border-current/20">
@@ -1578,7 +1579,7 @@ export function BtopTerminalView({
                     <span className={colors.textMuted}>CPU 整体负载:</span>
                     <span className="font-mono font-bold">{cpuPercent.toFixed(1)}%</span>
                   </div>
-                  <div className="w-full mt-0.5">[{renderBlockMeter(cpuPercent, 24)}]</div>
+                  <div className="w-full mt-0.5"><BlockMeterFill percent={cpuPercent} colors={colors} /></div>
                   <div className="flex justify-between text-[10px] text-current/70 mt-0.5">
                     <span>Tasks: {activeNode.system?.process_count != null ? activeNode.system.process_count : "--"}</span>
                     <span>
@@ -1596,7 +1597,7 @@ export function BtopTerminalView({
                     <span className={colors.textMuted}>物理内存 / RAM:</span>
                     <span className="font-mono font-bold">{formatBytes(memUsed)} / {formatBytes(memTotal)} ({memPercent.toFixed(0)}%)</span>
                   </div>
-                  <div className="w-full mt-0.5">[{renderBlockMeter(memPercent, 24)}]</div>
+                  <div className="w-full mt-0.5"><BlockMeterFill percent={memPercent} colors={colors} /></div>
                   <div className="flex justify-between text-[10px] text-current/70 mt-0.5">
                     <span>可用: {formatBytes(memAvail)}</span>
                     <span>空闲: {formatBytes(memFree)}</span>
@@ -1609,7 +1610,7 @@ export function BtopTerminalView({
                     <span className={colors.textMuted}>系统盘 ( / ):</span>
                     <span className="font-mono font-bold">{formatBytes(diskUsed)} / {formatBytes(diskTotal)} ({diskPercent.toFixed(1)}%)</span>
                   </div>
-                  <div className="w-full mt-0.5">[{renderBlockMeter(diskPercent, 24)}]</div>
+                  <div className="w-full mt-0.5"><BlockMeterFill percent={diskPercent} colors={colors} /></div>
                 </div>
 
                 {/* Network Real-time Rates */}
@@ -1660,7 +1661,7 @@ export function BtopTerminalView({
                 <div className="pt-1 border-t border-dashed border-current/20">
                   <div className="flex justify-between text-[11px] mb-1">
                     <span className={colors.textMuted}>双向流量配额:</span>
-                    <span>{formatBytes(billing.bandwidth_used || 0)} / {formatBytes(billing.bandwidth_quota)} ({quotaPercent}%)</span>
+                    <span>{formatBytes(billing.bandwidth_used || 0)} / {billing.bandwidth_quota > 0 ? formatBytes(billing.bandwidth_quota) : "无限制"} ({billing.bandwidth_quota > 0 ? `${quotaPercent}%` : "--"})</span>
                   </div>
                   <BlockMeterFill percent={quotaPercent} colors={colors} />
                 </div>

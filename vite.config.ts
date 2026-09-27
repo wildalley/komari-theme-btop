@@ -5,7 +5,8 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: "./",
+  // Keep assets rooted at / when the theme is served at /dashboard.
+  base: "/",
   build: {
     outDir: "dist",
     emptyOutDir: true,

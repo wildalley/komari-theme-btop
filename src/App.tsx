@@ -116,8 +116,9 @@ export function App() {
         const res = await fetch("/api/v1/nodes", { credentials: "include" });
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data) && !unmounted) {
-            setNodes(data);
+          const list = Array.isArray(data) ? data : data?.nodes;
+          if (Array.isArray(list) && !unmounted) {
+            setNodes(list);
             setupProbeWS();
             // Safety net: refresh over REST while the WebSocket is down, so a
             // failed or dropped connection degrades to 3s-fresh data instead
@@ -128,7 +129,8 @@ export function App() {
                 const r = await fetch("/api/v1/nodes", { credentials: "include" });
                 if (r.ok) {
                   const j = await r.json();
-                  if (Array.isArray(j) && !unmounted) setNodes(j);
+                  const list = Array.isArray(j) ? j : j?.nodes;
+                  if (Array.isArray(list) && !unmounted) setNodes(list);
                 }
               } catch (_) {}
             }, 3000);
